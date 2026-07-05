@@ -31,6 +31,7 @@
 #include "BuiltinNames.h"
 #include "Completion.h"
 #include "GlobalObjectMethodTable.h"
+#include "InternalFieldTuple.h"
 #include "JSCInlines.h"
 #include "JSMicrotask.h"
 #include "JSModuleNamespaceObject.h"
@@ -375,12 +376,22 @@ JSPromise* JSModuleLoader::loadModule(JSGlobalObject* globalObject, const Identi
         RETURN_IF_EXCEPTION(scope, nullptr);
     }
 
+    JSValue importerAsyncContext = jsUndefined();
 #if USE(BUN_JSC_ADDITIONS)
     AbstractModuleRecord::ModuleRequest request { specifier, WTF::move(contextParameters) };
+
+    // A dynamic import() evaluates its module graph under the async context that was
+    // active at the import() call site. This runs synchronously from requestImportModule,
+    // so the slot still holds the importer's context; evaluation happens several
+    // microtasks later, long after the slot has been reset. Carry it along.
+    if (flags.contains(ModuleLoadFlag::Dynamic)) {
+        if (auto* asyncContextData = globalObject->m_asyncContextData.get())
+            importerAsyncContext = asyncContextData->getInternalField(0);
+    }
 #else
     AbstractModuleRecord::ModuleRequest request { specifier, ScriptFetchParameters::create(type) };
 #endif
-    auto* context = ModuleLoadingContext::create(vm, request, WTF::move(scriptFetcher), flags, referrerAsyncOrder);
+    auto* context = ModuleLoadingContext::create(vm, request, WTF::move(scriptFetcher), flags, referrerAsyncOrder, importerAsyncContext);
 
     JSPromise* intermediatePromise = JSPromise::create(vm, globalObject->promiseStructure());
     intermediatePromise->markAsHandled();

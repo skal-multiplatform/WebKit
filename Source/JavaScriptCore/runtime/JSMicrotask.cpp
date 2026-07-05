@@ -84,6 +84,37 @@ static ALWAYS_INLINE JSCell* NODELETE dynamicCastToCell(JSValue value)
     return nullptr;
 }
 
+#if USE(BUN_JSC_ADDITIONS)
+// Installs a previously captured async context (AsyncLocalStorage store) into the
+// global slot for the duration of the scope, restoring the previous one on exit.
+class AsyncContextScope {
+    WTF_MAKE_NONCOPYABLE(AsyncContextScope);
+public:
+    AsyncContextScope(JSGlobalObject* globalObject, VM& vm, JSValue asyncContext)
+        : m_vm(vm)
+    {
+        if (!asyncContext || asyncContext.isUndefined())
+            return;
+        m_asyncContextData = globalObject->m_asyncContextData.get();
+        if (!m_asyncContextData)
+            return;
+        m_previous = m_asyncContextData->getInternalField(0);
+        m_asyncContextData->putInternalField(vm, 0, asyncContext);
+    }
+
+    ~AsyncContextScope()
+    {
+        if (m_asyncContextData)
+            m_asyncContextData->putInternalField(m_vm, 0, m_previous);
+    }
+
+private:
+    VM& m_vm;
+    InternalFieldTuple* m_asyncContextData { nullptr };
+    JSValue m_previous;
+};
+#endif
+
 template<typename... Args> requires (std::is_convertible_v<Args, JSValue> && ...)
 static JSValue callMicrotask(JSGlobalObject* globalObject, JSValue functionObject, JSValue thisValue, JSCell* context, ASCIILiteral message, MicrotaskCall* microtaskCall, Args... args)
 {
@@ -1075,7 +1106,7 @@ static void moduleLoadTopSettled(JSGlobalObject* globalObject, VM& vm, ThrowScop
             innerLoadFlags.add(ModuleLoadFlag::UseImportMap);
         if (context->dynamic()) {
 #if USE(BUN_JSC_ADDITIONS)
-            combinedCell = ModuleLoaderPayload::create(vm, statePromise, context->deferred(), context->referrerAsyncOrder());
+            combinedCell = ModuleLoaderPayload::create(vm, statePromise, context->deferred(), context->referrerAsyncOrder(), context->importerAsyncContext());
 #else
             combinedCell = ModuleLoaderPayload::create(vm, statePromise, context->deferred());
 #endif
@@ -1384,7 +1415,13 @@ static void dynamicImportLoadSettled(JSGlobalObject* globalObject, VM& vm, Throw
     if (!deferred) {
         // 6.c. Let evaluatePromise be module.Evaluate().
 #if USE(BUN_JSC_ADDITIONS)
-        JSPromise* evaluatePromise = module->evaluate(globalObject, dynamicPayload->referrerAsyncOrder());
+        JSPromise* evaluatePromise = nullptr;
+        {
+            // The module bodies in this graph are the continuation of the import()
+            // call, so they run under the async context captured there.
+            AsyncContextScope asyncContextScope(globalObject, vm, dynamicPayload->importerAsyncContext());
+            evaluatePromise = module->evaluate(globalObject, dynamicPayload->referrerAsyncOrder());
+        }
 #else
         JSPromise* evaluatePromise = module->evaluate(globalObject);
 #endif
@@ -1415,6 +1452,11 @@ static void dynamicImportLoadSettled(JSGlobalObject* globalObject, VM& vm, Throw
 
     // For each Module Record dep of evaluationList, append dep.Evaluate() to asyncDepsEvaluationPromises.
     MarkedArgumentBuffer asyncDepsEvaluationPromises;
+#if USE(BUN_JSC_ADDITIONS)
+    // As above: the eagerly evaluated async dependencies are the continuation of the
+    // import defer() call, so they run under the async context captured there.
+    AsyncContextScope asyncContextScope(globalObject, vm, dynamicPayload->importerAsyncContext());
+#endif
     for (AbstractModuleRecord* dep : evaluationList) {
 #if USE(BUN_JSC_ADDITIONS)
         JSPromise* depPromise = dep->evaluate(globalObject, dynamicPayload->referrerAsyncOrder());
