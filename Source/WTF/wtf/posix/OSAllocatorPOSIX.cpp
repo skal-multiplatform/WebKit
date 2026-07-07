@@ -53,7 +53,12 @@
 #include <wtf/spi/cocoa/MachVMSPI.h>
 #endif
 
-#if OS(DARWIN)
+// Skal: gate on PLATFORM(MAC) instead of OS(DARWIN). OS(DARWIN) is true for
+// macOS AND iOS (Apple Mach-O kernel family), but mach_vm.h is marked
+// "unsupported" in iPhoneOS.sdk and mach_vm_map isn't available to
+// third-party iOS apps. On iOS we fall through to the regular mmap-based
+// allocator below (same path Linux + Android use).
+#if PLATFORM(MAC)
 
 #include <mach/mach.h>
 #include <mach/mach_vm.h>

@@ -28,6 +28,13 @@
 #if ENABLE(JIT)
 
 #include "AccessCase.h"
+// Skal: needed for CCallHelpers::Jump / CCallHelpers::JumpList nested
+// types referenced as method return types below (~lines 279-280).
+// Newer clang (Xcode 26) is stricter about accessing nested types via
+// forward declaration; older clangs on macOS/Linux let this through.
+// CCallHelpers.h is itself `#if ENABLE(JIT)`-guarded, so this include
+// is empty when JIT is off and adds nothing to non-JIT builds.
+#include "CCallHelpers.h"
 #include "InlineCacheHandler.h"
 #include "JITStubRoutine.h"
 #include "JSFunctionInlines.h"

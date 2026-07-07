@@ -94,7 +94,15 @@ static ALWAYS_INLINE void threadSelfRestrict()
         RELEASE_ASSERT_NOT_REACHED();
 }
 
-#elif CPU(ARM64)
+// Skal: gate the pthread_jit_write_protect_np() arm64 path on
+// PLATFORM(MAC) — pthread_jit_write_protect_* is marked unavailable on
+// iOS (`pthread.h` carries an explicit __API_UNAVAILABLE attribute).
+// Third-party iOS apps can't toggle JIT permissions; they can't have
+// JIT at all. We're building with ENABLE_JIT=OFF anyway, so this
+// branch is unreachable on iOS at runtime — but the header still
+// gets compiled, so we need it to type-check. Falls through to the
+// generic stub below that just RELEASE_ASSERT_NOT_REACHEDs.
+#elif CPU(ARM64) && PLATFORM(MAC)
 #include <pthread.h>
 
 template <MemoryRestriction restriction>

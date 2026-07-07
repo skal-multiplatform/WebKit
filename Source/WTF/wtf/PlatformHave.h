@@ -101,7 +101,13 @@
 #define HAVE_HISERVICES 1
 #endif
 
-#if PLATFORM(IOS_FAMILY)
+// Skal: iOS SDK doesn't ship <readline/history.h> — macOS exposes it via
+// libedit's BSD-compatible API but iPhoneOS.sdk has no equivalent.
+// HAVE_READLINE was previously defined unconditionally on IOS_FAMILY,
+// which broke the JSC shell build for real iOS targets.
+// (Note: line ~228 below also defines HAVE_READLINE for OS(DARWIN);
+// that one's similarly gated to PLATFORM(MAC) only.)
+#if PLATFORM(IOS_FAMILY) && 0
 #define HAVE_READLINE 1
 #endif
 
@@ -224,7 +230,11 @@
 #define HAVE_PTHREAD_SETNAME_NP 1
 #endif
 
-#if OS(DARWIN)
+// Skal: gate on PLATFORM(MAC) — macOS provides readline via libedit, but
+// iPhoneOS.sdk doesn't ship <readline/history.h>. See § iOS port. The
+// JSC shell (jsc.cpp) is the only consumer; without this gate the iOS
+// build fails on jsc.cpp:140.
+#if PLATFORM(MAC)
 #define HAVE_READLINE 1
 #endif
 
