@@ -372,7 +372,21 @@ macro(_WEBKIT_TARGET_LINK_FRAMEWORK _target)
         get_property(_linked_into GLOBAL PROPERTY ${framework}_LINKED_INTO)
 
         # See if the target is linking a framework that the specified framework is already linked into
-        if ((NOT _linked_into) OR (${framework} STREQUAL ${_linked_into}) OR (NOT ${_linked_into} IN_LIST ${_target}_FRAMEWORKS))
+        #
+        # [skal] `${_linked_into}` must be QUOTED. get_property leaves it empty
+        # whenever ${framework}_LINKED_INTO was never set — true for WTF in a
+        # JSCOnly build — and an unquoted empty expansion contributes NO
+        # argument at all, so the expression degrades to
+        #   ((NOT _linked_into) OR (WTF STREQUAL) OR (NOT IN_LIST X_FRAMEWORKS))
+        # i.e. STREQUAL and IN_LIST each lose an operand. if() parses the whole
+        # expression before evaluating anything, so the leading
+        # `(NOT _linked_into)` guard cannot save it: configure dies with
+        # "Unknown arguments specified" rather than taking the branch that
+        # guard exists to take. Newer CMake tolerates the malformed form,
+        # which is why this only fires on some toolchains.
+        # Quoting is semantically identical in every case and also stops
+        # CMP0054 re-expanding a framework name that collides with a variable.
+        if ((NOT _linked_into) OR ("${framework}" STREQUAL "${_linked_into}") OR (NOT "${_linked_into}" IN_LIST ${_target}_FRAMEWORKS))
             list(APPEND ${_target}_PRIVATE_LIBRARIES WebKit::${framework})
 
             # The WebKit:: alias targets do not propagate OBJECT libraries so the
